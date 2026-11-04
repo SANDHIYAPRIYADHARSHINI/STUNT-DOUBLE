@@ -20,6 +20,9 @@ def isolated_state(tmp_path, monkeypatch) -> Iterator[None]:
             f"sqlite:///{tmp_path / str(index) / 'sandbox.db'}",
         )
     monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path / 'source.db'}")
+    monkeypatch.setattr(
+        settings, "demo_source_database_url", f"sqlite:///{tmp_path / 'demo_source.db'}"
+    )
     with store.lock:
         store.tasks.clear()
         store.runs.clear()

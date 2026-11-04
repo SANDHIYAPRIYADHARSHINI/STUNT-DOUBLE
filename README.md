@@ -10,10 +10,10 @@ Local backend scaffold using synthetic fixtures and deterministic mock agents. N
 
 ## Architecture and workflow
 
-FastAPI routers call modular privacy, sandbox, diff, risk, and approval services. Pydantic models define API contracts; SQLAlchemy validates SQLite URLs; SQLite backs disposable rehearsal copies.
+FastAPI routers call modular privacy, sandbox, diff, risk, and approval services. Pydantic models define API contracts; SQLAlchemy validates SQLite URLs; SQLite backs a persistent fake demo source and three independent rehearsal files.
 
 1. Submit a natural-language task.
-2. Mask sensitive fixture fields with deterministic synthetic placeholders.
+2. Reset three sandbox files from the demo source and mask sensitive fields in the copies.
 3. Run three mock agents on three separate SQLite copies.
 4. Capture inserted, updated, and deleted rows by primary key.
 5. Compare unanimous, partial, and conflicting changes.
@@ -25,7 +25,7 @@ The fixed mock supports `Delete inactive customers`, deleting the inactive synth
 
 ## Features
 
-- Three isolated, per-run SQLite fixture copies, removed after rehearsal
+- A seeded demo SQLite source and three independent files, reset before each rehearsal
 - Deterministic masking of common sensitive fields
 - Row-level diffs and consensus classification
 - Heuristic risk reports and prompt-injection flags
@@ -42,6 +42,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
+python -m app.db
 python -m uvicorn app.main:app --reload
 ```
 
@@ -57,9 +58,10 @@ Or run `docker compose up --build`. Compose binds only localhost and mounts thre
 
 ## Environment
 
-See `.env.example` for every supported setting. All URLs must use file-backed `sqlite:///` paths. Sandbox locations must be distinct from one another and from `DATABASE_URL`. The source URL is reserved and is never opened. The demo always seeds synthetic data.
+See `.env.example` for every supported setting. All URLs must use file-backed `sqlite:///` paths. The demo source and all three sandbox locations must be distinct from one another and from `DATABASE_URL`, which remains reserved and is never opened. `DEMO_SOURCE_DATABASE_URL` points only to the fake demo source.
 
 ```dotenv
+DEMO_SOURCE_DATABASE_URL=sqlite:///./data/demo_source.db
 DATABASE_URL=sqlite:///./data/demo.db
 SANDBOX_DATABASE_URL_1=sqlite:///./data/sandbox1/sandbox.db
 SANDBOX_DATABASE_URL_2=sqlite:///./data/sandbox2/sandbox.db
@@ -73,6 +75,17 @@ REQUIRE_HUMAN_APPROVAL=true
 
 API keys are placeholders for future integrations. `AGENT_TIMEOUT_SECONDS` currently sets SQLite lock wait, not a hard worker execution deadline. `MAX_AFFECTED_ROWS` affects risk scoring, not production authorization. Setting `REQUIRE_HUMAN_APPROVAL=false` never bypasses the approval check or enables writes.
 
+## Demo databases and reset
+
+Run `python -m app.db` to create `data/demo_source.db` and the three configured sandbox files. The command is safe to repeat: it keeps the existing owned demo source and resets all three sandboxes. The runner also initializes missing files and resets them before every rehearsal.
+
+The source has three fake customers with `id`, `name`, `email`, `phone`, `status`, `created_at`, and `last_active_at`. Names start with `Demo`, email addresses use `example.invalid`, and phones use fictional 555 numbers. Timestamps are stored as ISO 8601 UTC text.
+
+`create_demo_database(path)` seeds a new source; `create_sandbox_databases(source, destinations)` creates exactly three independent SQLite backups; `reset_sandboxes(source, destinations)` restores their complete schema and data. Initialization and reset copy identical source values. During rehearsal, the privacy shield masks the copies before agents see them, and mock changes are committed only to these sandbox files. Reset restores the original fake source values.
+
+Files carry a SQLite application ID ownership marker. Existing unmarked files are refused, including old scaffold sandbox files; choose new empty paths for those files. Symlink and hard-link aliases between demo files or to the reserved production path are rejected. The marker prevents accidental adoption, not malicious file replacement.
+
+Rehearsals and resets share a process lock. Use a single API worker and stop the API before running the reset CLI; concurrent processes or external SQLite writers are unsupported. The three-file reset is sequential, not one atomic transaction. Sandbox files persist for inspection; API review metadata remains in memory.
 ## Try the API
 
 Use `/docs` to make these calls in sequence:

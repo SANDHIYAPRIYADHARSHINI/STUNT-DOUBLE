@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-Task request -> Task registry -> Synthetic fixture -> Privacy shield
+Task request -> Task registry -> Demo source -> Reset copies -> Mask
                                                         |
                         +-------------------------------+
                         v               v               v
@@ -23,13 +23,13 @@ Task request -> Task registry -> Synthetic fixture -> Privacy shield
 
 ## Data flow
 
-The API stores task metadata in memory. Sandbox execution creates a synthetic customer fixture in memory, masks common sensitive columns, and uses SQLite backup to create fresh file copies. Every agent gets a separate temporary directory under its configured sandbox volume. Copies are deleted on completion, including exceptions. Source/production databases are never opened, copied, or modified.
+The API stores task metadata in memory. `create_demo_database` seeds an owned on-disk demo source with three fake customers. `create_sandbox_databases` uses read-only source connections and SQLite backup to create three independent files. `reset_sandboxes` restores them from that source before each rehearsal. The runner masks sensitive fields in each copy before agent snapshots, then commits mock changes to the copies. The demo source remains unchanged during rehearsals and resets. `DATABASE_URL` is reserved for production and never opened; `DEMO_SOURCE_DATABASE_URL` is a separate synthetic-only source.
 
-Only a fixed mock plan can run: a request containing `delete` and `inactive` executes a constant `DELETE FROM customers WHERE active = 0`. User text never becomes SQL. Other requests produce no changes. The mock does not represent general natural-language understanding. Before/after snapshots capture inserts, updates and deletes with stable primary keys. Full masked preimages and postimages remain available in the run record after temporary files are removed.
+Only a fixed mock plan can run: a request containing `delete` and `inactive` executes a constant `DELETE FROM customers WHERE status = 'inactive'`. User text never becomes SQL. Other requests produce no changes. The mock does not represent general natural-language understanding. Before/after snapshots capture inserts, updates and deletes with stable primary keys. Full masked preimages and postimages remain available in the run record while sandbox files persist until the next reset.
 
 ## Isolation
 
-Three SQLite-backed volumes separate sandbox storage. Unique rehearsal directories prevent runs from sharing files. The API is the only process in this scaffold; these are not container-per-agent security boundaries. TODO: Vultr workers with restricted filesystem, network, resources and hard execution deadlines before real LLM-generated SQL is permitted. Current timeout is SQLite lock wait only.
+Three SQLite-backed volumes separate sandbox storage. Every agent uses its own persistent file. A process-level reentrant lock serializes reset and rehearsal; multiple API workers, concurrent CLI resets and external writers are unsupported. All paths must be distinct, including symlink/hard-link aliases, and must not alias the reserved production path. Existing files must carry the demo application ID before reset can overwrite them. Reset restores schema as well as rows; the three backups run sequentially and are not an atomic multi-file transaction. The API is the only process in this scaffold; these are not container-per-agent security boundaries. TODO: Vultr workers with restricted filesystem, network, resources and hard execution deadlines before real LLM-generated SQL is permitted. Current timeout is SQLite lock wait only.
 
 ## Diffing
 
