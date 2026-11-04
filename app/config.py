@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     """Demo settings; approval cannot be disabled by configuration."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    demo_source_database_url: str = "sqlite:///./data/demo_source.db"
     database_url: str = "sqlite:///./data/demo.db"
     sandbox_database_url_1: str = "sqlite:///./data/sandbox1/sandbox.db"
     sandbox_database_url_2: str = "sqlite:///./data/sandbox2/sandbox.db"

@@ -4,6 +4,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
+      DEMO_SOURCE_DATABASE_URL: sqlite:////app/data/demo_source.db
       DATABASE_URL: sqlite:////app/data/demo.db
       SANDBOX_DATABASE_URL_1: sqlite:////app/data/sandbox1/sandbox.db
       SANDBOX_DATABASE_URL_2: sqlite:////app/data/sandbox2/sandbox.db

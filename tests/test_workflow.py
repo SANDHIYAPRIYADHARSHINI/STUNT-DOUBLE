@@ -46,7 +46,7 @@ def test_full_workflow_without_production_writes(client, tmp_path, monkeypatch):
             assert applied.json()["production_writes_enabled"] is False
     assert client.post("/approval/rollback", json=reference).json()["status"] == "nothing_applied"
     assert source.read_bytes() == b"source must never be opened or modified"
-    assert not list(tmp_path.rglob("sandbox.db"))
+    assert len(list(tmp_path.rglob("sandbox.db"))) == 3
     assert store.audit_log
 
 

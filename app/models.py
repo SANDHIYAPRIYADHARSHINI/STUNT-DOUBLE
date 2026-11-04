@@ -1,5 +1,6 @@
 """Domain models; review metadata is intentionally in memory for the demo."""
 
+from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -56,3 +57,15 @@ class ApprovalDecision(BaseModel):
     decision: Literal["approve", "reject"]
     reviewer: str = Field(min_length=1, max_length=200, pattern=r"\S")
     reason: str = Field(default="", max_length=2000)
+
+
+class Customer(BaseModel):
+    """Clearly fake demo customer, validated before SQLite seeding."""
+
+    id: int
+    name: str
+    email: str
+    phone: str
+    status: Literal["active", "inactive"]
+    created_at: datetime
+    last_active_at: datetime
