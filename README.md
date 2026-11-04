@@ -6,7 +6,7 @@ AI-generated database operations can delete the wrong rows, expose personal data
 
 ## Status
 
-Local backend scaffold using synthetic fixtures and deterministic mock agents. No API keys, production connections, production writes, real LLM calls, or frontend are used. Approval is recorded, but **apply and rollback are non-writing stubs**. Review state is process-local and disappears on restart; use one API worker. This is a local demo without authentication.
+Working local backend demo using synthetic SQLite data and three deterministic mock agents. No API keys, production connections, production writes, real LLM calls, or frontend are used. Approval is recorded, but **apply and rollback are non-writing stubs**. Review state is process-local and disappears on restart; use one API worker. This is a local demo without authentication.
 
 ## Architecture and workflow
 
@@ -33,25 +33,50 @@ The mocks support `Delete inactive customers`: agents 1 and 2 delete only inacti
 - Non-writing apply/rollback endpoints
 - Tests and Docker Compose with three sandbox volumes
 
-## Local setup
+## Run locally
 
-Install Python 3.11 or newer, then from this directory:
+Requires Python 3.11+. Run commands from the repository root. This project currently serves an API; use the interactive docs as the demo interface.
+
+### Windows PowerShell: first-time setup
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-python -m app.db
-python -m uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
 ```
 
-On macOS/Linux activate with `source .venv/bin/activate` and copy with `cp .env.example .env`. Open http://127.0.0.1:8000/docs for interactive API calls; health is at http://127.0.0.1:8000/health.
+If Python is installed through the Windows launcher, use `py -3.11 -m venv .venv` for the first command. Virtual-environment activation is optional when using the explicit interpreter path above.
+
+### Windows PowerShell: subsequent starts
+
+The workspace already has a `.venv`; start it with:
 
 ```powershell
-python -m pytest
-python -m ruff check .
-python -m ruff format --check .
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
+```
+
+Open [interactive API docs](http://localhost:8000/docs), [health](http://localhost:8000/health), or [OpenAPI schema](http://localhost:8000/openapi.json). The API root `/` has no page; use `/docs`. Stop a foreground server with `Ctrl+C`. Reloading restarts the process and clears in-memory task/run history.
+
+If port 8000 is occupied, use `--port 8001` and open http://localhost:8001/docs. Update `$baseUrl` in the demo commands accordingly.
+
+The demo source and three sandbox files are initialized automatically on the first rehearsal. No API keys, external database services, or manual database setup are needed.
+
+### macOS/Linux
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+[ -f .env ] || cp .env.example .env
+.venv/bin/python -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000
+```
+
+### Checks
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m ruff format --check .
 ```
 
 Or run `docker compose up --build`. Compose binds only localhost and mounts three separate SQLite sandbox volumes. SQLite is embedded, so no database server services are needed. These volumes separate files, not OS security boundaries; real agents need isolated workers.
@@ -86,6 +111,7 @@ The source has three fake customers with `id`, `name`, `email`, `phone`, `status
 Files carry a SQLite application ID ownership marker. Existing unmarked files are refused, including old scaffold sandbox files; choose new empty paths for those files. Symlink and hard-link aliases between demo files or to the reserved production path are rejected. The marker prevents accidental adoption, not malicious file replacement.
 
 Rehearsals and resets share a process lock. Use a single API worker and stop the API before running the reset CLI; concurrent processes or external SQLite writers are unsupported. The three-file reset is sequential, not one atomic transaction. Sandbox files persist for inspection; API review metadata remains in memory.
+
 ## Try the core demo through FastAPI /docs
 
 Start `python -m uvicorn app.main:app --reload` and open http://127.0.0.1:8000/docs. No manual database initialization or API keys are required: the first rehearsal creates missing demo files.
@@ -100,6 +126,20 @@ Expected demo: agents 1 and 2 affect one inactive customer each; agent 3 affects
 `GET /tasks/{task_id}` returns cumulative task status and linked agent execution IDs. Each rehearsal embeds a snapshot with only that rehearsal's three execution IDs, so repeating a task does not change older responses. `GET /diffs/{run_id}` and `GET /risk/{run_id}` remain available. Unknown task/run IDs return 404. Unsupported tasks are skipped, and failed/skipped observations are summarized as incomplete rather than agreement.
 
 The existing approval and rollback stubs belong to Team Member B. They are not part of this core demo and production writes remain disabled.
+### Run the demo from a second PowerShell terminal
+
+Keep the server running, then execute:
+
+```powershell
+$baseUrl = "http://localhost:8000"
+$task = Invoke-RestMethod "$baseUrl/tasks" -Method Post -ContentType "application/json" -Body '{"description":"Delete inactive customers"}'
+$body = @{ task_id = $task.id } | ConvertTo-Json
+$run = Invoke-RestMethod "$baseUrl/sandbox/run" -Method Post -ContentType "application/json" -Body $body
+Invoke-RestMethod "$baseUrl/sandbox/runs/$($run.id)/summary" | ConvertTo-Json -Depth 10
+```
+
+The summary should report `conflicting`, affected counts of 1, 1, and 3, and blast radius 3. Use the same run ID with `GET /sandbox/runs/{run_id}` to inspect full masked row images.
+
 ## Agent results and configuration
 
 `POST /sandbox/run` runs the rehearsal synchronously and returns all three normalized `RunResult` objects in `agents`. `GET /sandbox/runs/{run_id}` returns the same stored results, diffs and risk report.
@@ -111,6 +151,7 @@ A failed statement rolls back that agent's entire transaction. Earlier operation
 To configure behavior in Python, pass exactly three uniquely named `RehearsalAgent` implementations to `run_agents(task, settings, agents=providers)`. A provider implements `plan(task) -> AgentPlan`, returning SQL strings and raw output without receiving a database connection. `MockAgent(agent_id, dangerous_delete=False)` configures the supplied mocks. The API uses the `get_agents` FastAPI dependency; override it server-side to install other providers. Tests use stub providers exclusively.
 
 The local executor currently allows only customer-table SELECT/INSERT/UPDATE/DELETE operations. SQLite authorization denies ATTACH, PRAGMA, DDL, explicit transaction commands and SQL functions; this restricts the demo executor but is not a hardened worker boundary. TODO: Gemma adapters, vetted SQL policy, hard deadlines and isolated Vultr workers before running real model-generated plans.
+
 ## Row-level disagreement payload
 
 The `diffs` object from POST/GET rehearsal endpoints and `GET /diffs/{run_id}` compares all three `RunResult` records without selecting a correct outcome.
@@ -126,6 +167,7 @@ Insert comparisons use inserted values, deletes use preimages, and updates compa
 `affected_row_count_per_agent` counts distinct committed row identities per agent; `maximum_affected_row_count` is the largest of those counts. `blast_radius_estimate` is the union of all identities touched, including transient committed statement changes, excluding rolled-back operations. Legacy `affected_row_count` counts the union of final net-change rows. No affected-row count is summed across agents.
 
 In the default demo, customer 1's deletion is unanimous (including agents 1 and 2). Agent 3's additional deletions of customers 2 and 3 are conflicting scope changes. Per-agent counts are 1, 1, and 3; maximum and blast radius are both 3. Classification reports the differences only; it does not authorize or recommend a variant.
+
 ## Next steps
 
 TODO: Gemma plan generation and privacy classification; Vultr worker isolation; durable authenticated review/audit storage; policy-validated SQL; transaction-bound approved diffs and rollback preimages; frontend dashboard. Heuristic SQL scanning and deterministic hashes are demo aids, not comprehensive injection detection or anonymization guarantees.
