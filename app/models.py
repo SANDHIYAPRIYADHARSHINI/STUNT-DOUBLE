@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 def new_id() -> str:
@@ -39,7 +39,7 @@ class AgentRun(BaseModel):
     id: str = Field(default_factory=new_id)
     task_id: str
     agent: str
-    status: Literal["completed", "failed"] = "completed"
+    status: Literal["completed", "failed", "skipped"] = "completed"
     sql: str = ""
     changes: list[DatabaseChange] = Field(default_factory=list)
 
@@ -69,3 +69,75 @@ class Customer(BaseModel):
     status: Literal["active", "inactive"]
     created_at: datetime
     last_active_at: datetime
+
+
+class SQLOperation(BaseModel):
+    """One attempted statement, its observed changes and transaction outcome."""
+
+    sql: str
+    status: Literal["completed", "failed", "rolled_back"]
+    changes: list[DatabaseChange] = Field(default_factory=list)
+    error: str | None = None
+
+
+class RunResult(AgentRun):
+    """Normalized agent output; legacy changes describe the committed net diff."""
+
+    sql_operations: list[SQLOperation] = Field(default_factory=list)
+    raw_output: str = ""
+    error: str | None = None
+
+    @computed_field
+    @property
+    def agent_id(self) -> str:
+        """Expose the stable provider identity, distinct from this result's id."""
+        return self.agent
+
+    @computed_field
+    @property
+    def inserted_rows(self) -> list[dict[str, Any]]:
+        """Return postimages of committed insert events, including transient rows."""
+        return [
+            change.after
+            for operation in self.sql_operations
+            if operation.status == "completed"
+            for change in operation.changes
+            if change.operation == "insert" and change.after is not None
+        ]
+
+    @computed_field
+    @property
+    def updated_rows(self) -> list[DatabaseChange]:
+        """Return before/after images of committed update events."""
+        return [
+            change
+            for operation in self.sql_operations
+            if operation.status == "completed"
+            for change in operation.changes
+            if change.operation == "update"
+        ]
+
+    @computed_field
+    @property
+    def deleted_rows(self) -> list[dict[str, Any]]:
+        """Return preimages of committed delete events."""
+        return [
+            change.before
+            for operation in self.sql_operations
+            if operation.status == "completed"
+            for change in operation.changes
+            if change.operation == "delete" and change.before is not None
+        ]
+
+    @computed_field
+    @property
+    def affected_row_count(self) -> int:
+        """Count distinct row identities touched by committed statement events."""
+        return len(
+            {
+                (change.table, change.row_id)
+                for operation in self.sql_operations
+                if operation.status == "completed"
+                for change in operation.changes
+            }
+        )
