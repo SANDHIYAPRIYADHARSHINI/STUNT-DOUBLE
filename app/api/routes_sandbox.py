@@ -29,10 +29,10 @@ def start_run(
         agents = run_agents(task, settings, providers)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    diffs = compare_changes([agent.changes for agent in agents])
+    diffs = compare_changes(agents)
     risk = analyze_risk(
         [agent.sql for agent in agents],
-        diffs.affected_row_count,
+        diffs.blast_radius_estimate,
         bool(diffs.conflicting_changes or diffs.partial_agreement_changes),
         task.description,
         settings.max_affected_rows,

@@ -53,6 +53,7 @@ def test_api_roundtrip_returns_all_normalized_results(client):
     fetched = client.get(f"/sandbox/runs/{run['id']}")
     assert fetched.status_code == 200
     assert fetched.json() == run
+    assert client.get(f"/diffs/{run['id']}").json() == run["diffs"]
     assert [agent["affected_row_count"] for agent in run["agents"]] == [1, 1, 3]
     for result in run["agents"]:
         assert {
@@ -70,7 +71,18 @@ def test_api_roundtrip_returns_all_normalized_results(client):
         assert result["task_id"] == task["id"]
     assert run["diffs"]["affected_row_count"] == 3
     assert len(run["diffs"]["unanimous_changes"]) == 1
-    assert len(run["diffs"]["partial_agreement_changes"]) == 2
+    assert len(run["diffs"]["conflicting_changes"]) == 2
+    assert run["diffs"]["partial_agreement_changes"] == []
+    assert run["diffs"]["affected_row_count_per_agent"] == {
+        "mock-agent-1": 1,
+        "mock-agent-2": 1,
+        "mock-agent-3": 3,
+    }
+    assert run["diffs"]["maximum_affected_row_count"] == 3
+    assert run["diffs"]["blast_radius_estimate"] == 3
+    assert all(
+        entry["agent_ids"] == ["mock-agent-3"] for entry in run["diffs"]["conflicting_changes"]
+    )
     assert run["risk"]["level"] == "critical"
     assert run["status"] == "completed"
 

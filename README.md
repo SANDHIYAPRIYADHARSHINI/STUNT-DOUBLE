@@ -110,6 +110,21 @@ A failed statement rolls back that agent's entire transaction. Earlier operation
 To configure behavior in Python, pass exactly three uniquely named `RehearsalAgent` implementations to `run_agents(task, settings, agents=providers)`. A provider implements `plan(task) -> AgentPlan`, returning SQL strings and raw output without receiving a database connection. `MockAgent(agent_id, dangerous_delete=False)` configures the supplied mocks. The API uses the `get_agents` FastAPI dependency; override it server-side to install other providers. Tests use stub providers exclusively.
 
 The local executor currently allows only customer-table SELECT/INSERT/UPDATE/DELETE operations. SQLite authorization denies ATTACH, PRAGMA, DDL, explicit transaction commands and SQL functions; this restricts the demo executor but is not a hardened worker boundary. TODO: Gemma adapters, vetted SQL policy, hard deadlines and isolated Vultr workers before running real model-generated plans.
+## Row-level disagreement payload
+
+The `diffs` object from POST/GET rehearsal endpoints and `GET /diffs/{run_id}` compares all three `RunResult` records without selecting a correct outcome.
+
+- `unanimous_changes`: all three completed agents made the same material change.
+- `partial_agreement_changes`: exactly two agents made the same change and no competing variant exists for that row.
+- `conflicting_changes`: different operations/values on one row, or a unilateral change whose scope the other agents did not confirm. Competing variants override a two-agent majority classification.
+
+Entries retain `table`, `row_id`, `operation`, `before`, and `after`, and add `classification`, supporting `agent_ids`, `changed_fields`, `reason`, and any `competing_changes`. `unchanged_agent_ids` identifies completed agents with no net change on that row. `unavailable_agent_ids` and top-level `warnings` identify failed/skipped results; these are never treated as unchanged votes.
+
+Insert comparisons use inserted values, deletes use preimages, and updates compare only changed fields and their before/after values. Unchanged columns do not split otherwise equivalent updates. Missing fields and explicit nulls remain distinct. Table name and primary key establish row identity, so delete-versus-update produces an explicit conflict.
+
+`affected_row_count_per_agent` counts distinct committed row identities per agent; `maximum_affected_row_count` is the largest of those counts. `blast_radius_estimate` is the union of all identities touched, including transient committed statement changes, excluding rolled-back operations. Legacy `affected_row_count` counts the union of final net-change rows. No affected-row count is summed across agents.
+
+In the default demo, customer 1's deletion is unanimous (including agents 1 and 2). Agent 3's additional deletions of customers 2 and 3 are conflicting scope changes. Per-agent counts are 1, 1, and 3; maximum and blast radius are both 3. Classification reports the differences only; it does not authorize or recommend a variant.
 ## Next steps
 
 TODO: Gemma plan generation and privacy classification; Vultr worker isolation; durable authenticated review/audit storage; policy-validated SQL; transaction-bound approved diffs and rollback preimages; frontend dashboard. Heuristic SQL scanning and deterministic hashes are demo aids, not comprehensive injection detection or anonymization guarantees.

@@ -33,7 +33,13 @@ Three SQLite-backed volumes separate sandbox storage. Every agent uses its own p
 
 ## Diffing
 
-Changes group by table and primary key. Identical before/after changes from all three agents are unanimous. Identical changes observed by fewer agents are partial agreement. Multiple variants for the same row are conflicting, even when two agents agree on one variant. Duplicate observations by one agent do not add votes. Blast radius counts distinct affected rows across all agents.
+The engine consumes three uniquely identified `RunResult` objects for the same task. Final net changes group by table and primary key, then by operation and material values. Inserts compare postimages, deletes compare preimages, and updates compare changed-field before/after values (including field presence). Unchanged columns are excluded from update signatures. Duplicate observations from one agent do not add votes.
+
+All three matching observations are unanimous. Exactly two matching observations with no competing variant are partial agreement. Multiple material variants for a row are conflicting, including delete-versus-update; this classification takes precedence over majority agreement. A unilateral change is a scope conflict. The default demo therefore has one unanimous deletion and two additional scope conflicts from agent 3.
+
+Each classified entry preserves row images and adds supporting agent IDs, unchanged/unavailable agent IDs, changed fields, a reason, and competing observations. Failed/skipped agents are unavailable rather than unchanged votes. Warnings mark incomplete observations. No variant is designated correct.
+
+Per-agent affected counts deduplicate row identities from committed net changes and statement observations. Maximum count is the largest per-agent value; blast radius is their union, including transient changes and excluding rollbacks. Legacy affected_row_count remains the union of net-change rows. Risk analysis consumes the blast-radius estimate. In the demo the counts are 1/1/3, maximum 3 and blast radius 3.
 
 ## Risk
 
