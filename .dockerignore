@@ -1,0 +1,13 @@
+.git
+.venv
+.python
+.uv-cache
+.env
+.env.*
+__pycache__
+.pytest_cache
+.ruff_cache
+data
+*.db
+*.log
+node_modules
