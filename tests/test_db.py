@@ -109,10 +109,11 @@ def test_rehearsal_resets_before_every_run():
     for _ in range(2):
         runs = run_agents(task, settings)
         assert len(runs) == 3
-        assert all(len(run.changes) == 1 for run in runs)
-        assert all(run.changes[0].before["status"] == "inactive" for run in runs)
+        assert [len(run.changes) for run in runs] == [1, 1, 3]
+        assert all(run.changes[0].before["status"] == "inactive" for run in runs[:2])
         assert all(1 not in rows(path) for path in paths)
-        assert all(rows(path)[2]["email"].startswith("synthetic_") for path in paths)
+        assert all(rows(path)[2]["email"].startswith("synthetic_") for path in paths[:2])
+        assert rows(paths[2]) == {}
         assert rows(source) == original
 
 

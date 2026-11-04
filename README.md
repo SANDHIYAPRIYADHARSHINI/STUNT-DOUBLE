@@ -21,7 +21,7 @@ FastAPI routers call modular privacy, sandbox, diff, risk, and approval services
 7. Record a human approve/reject decision.
 8. Check approval at apply; return an explicit disabled status without writing.
 
-The fixed mock supports `Delete inactive customers`, deleting the inactive synthetic customer. Other descriptions yield no changes. Agent identities and isolated observations are real, but independent model reasoning is not implemented. Unsupported tasks must not be interpreted as successful database execution.
+The mocks support `Delete inactive customers`: agents 1 and 2 delete only inactive customers; agent 3 deliberately runs an unbounded delete in its own sandbox. With the default fixture, their affected row counts are 1, 1, and 3. The comparison exposes two additional deletions from agent 3 and the risk report is critical. Other descriptions return `skipped` results with an explanation and no SQL. Model reasoning is mocked.
 
 ## Features
 
@@ -99,6 +99,17 @@ Use `/docs` to make these calls in sequence:
 
 `GET /tasks/<id>` returns status and linked agent IDs. The rehearsal response contains all three agent records and the run ID used by review endpoints. Unknown IDs return 404.
 
+## Agent results and configuration
+
+`POST /sandbox/run` runs the rehearsal synchronously and returns all three normalized `RunResult` objects in `agents`. `GET /sandbox/runs/{run_id}` returns the same stored results, diffs and risk report.
+
+Each result includes `id` (unique execution ID), `agent_id` (stable provider identity), `task_id`, `status`, `raw_output`, `error`, and `sql_operations`. Each SQL operation records its SQL, transaction status, row changes and error. `inserted_rows` contains postimages, `updated_rows` contains before/after pairs, and `deleted_rows` contains preimages. `affected_row_count` counts distinct rows touched by committed operations. Statement observations preserve an insert/update/delete sequence even when its final net effect is zero. Legacy `agent`, `sql`, and `changes` remain available; `changes` is the committed net diff used for consensus.
+
+A failed statement rolls back that agent's entire transaction. Earlier operations remain in the audit result as `rolled_back`; committed row collections and affected count are empty. The remaining agents still run. Provider errors produce `failed` results, and incomplete rehearsals receive a critical risk warning. Unsupported tasks are `skipped`.
+
+To configure behavior in Python, pass exactly three uniquely named `RehearsalAgent` implementations to `run_agents(task, settings, agents=providers)`. A provider implements `plan(task) -> AgentPlan`, returning SQL strings and raw output without receiving a database connection. `MockAgent(agent_id, dangerous_delete=False)` configures the supplied mocks. The API uses the `get_agents` FastAPI dependency; override it server-side to install other providers. Tests use stub providers exclusively.
+
+The local executor currently allows only customer-table SELECT/INSERT/UPDATE/DELETE operations. SQLite authorization denies ATTACH, PRAGMA, DDL, explicit transaction commands and SQL functions; this restricts the demo executor but is not a hardened worker boundary. TODO: Gemma adapters, vetted SQL policy, hard deadlines and isolated Vultr workers before running real model-generated plans.
 ## Next steps
 
 TODO: Gemma plan generation and privacy classification; Vultr worker isolation; durable authenticated review/audit storage; policy-validated SQL; transaction-bound approved diffs and rollback preimages; frontend dashboard. Heuristic SQL scanning and deterministic hashes are demo aids, not comprehensive injection detection or anonymization guarantees.

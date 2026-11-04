@@ -1,12 +1,15 @@
 """Synchronous local rehearsal endpoints."""
 
-from fastapi import APIRouter, HTTPException
+from collections.abc import Sequence
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
 from app.models import new_id
 from app.schemas import SandboxRequest, SandboxRun
 from app.services import store
-from app.services.agent_runner import run_agents
+from app.services.agent_runner import RehearsalAgent, get_agents, run_agents
 from app.services.diff_engine import compare_changes
 from app.services.risk_analyzer import analyze_risk
 
@@ -14,14 +17,16 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
 
 @router.post("/run", response_model=SandboxRun, status_code=201)
-def start_run(request: SandboxRequest) -> SandboxRun:
+def start_run(
+    request: SandboxRequest, providers: Annotated[Sequence[RehearsalAgent], Depends(get_agents)]
+) -> SandboxRun:
     """Rehearse a task on three independent synthetic databases."""
     with store.lock:
         if request.task_id not in store.tasks:
             raise HTTPException(404, "Task not found")
         task = store.tasks[request.task_id].model_copy(deep=True)
     try:
-        agents = run_agents(task, settings)
+        agents = run_agents(task, settings, providers)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     diffs = compare_changes([agent.changes for agent in agents])
@@ -32,7 +37,18 @@ def start_run(request: SandboxRequest) -> SandboxRun:
         task.description,
         settings.max_affected_rows,
     )
-    run = SandboxRun(id=new_id(), task_id=task.id, agents=agents, diffs=diffs, risk=risk)
+    status = (
+        "failed"
+        if any(agent.status == "failed" for agent in agents)
+        else ("skipped" if all(agent.status == "skipped" for agent in agents) else "completed")
+    )
+    if status == "failed":
+        risk.warnings.append("Agent execution failed; observations are incomplete")
+        risk.score = max(risk.score, 80)
+        risk.level = "critical"
+    run = SandboxRun(
+        id=new_id(), task_id=task.id, status=status, agents=agents, diffs=diffs, risk=risk
+    )
     with store.lock:
         store.runs[run.id] = run
         store.tasks[task.id].status = "rehearsed"

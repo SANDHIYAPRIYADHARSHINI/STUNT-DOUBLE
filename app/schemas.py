@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from app.models import AgentRun, DatabaseChange, RiskReport
+from app.models import DatabaseChange, RiskReport, RunResult
 
 
 class SandboxRequest(BaseModel):
@@ -24,7 +24,7 @@ class SandboxRun(BaseModel):
     id: str
     task_id: str
     status: str = "completed"
-    agents: list[AgentRun]
+    agents: list[RunResult]
     diffs: DiffComparison
     risk: RiskReport
 
