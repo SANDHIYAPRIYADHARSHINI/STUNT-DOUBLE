@@ -92,6 +92,9 @@ def _authorize(
 ) -> int:
     # Limit current providers to customer DML: no ATTACH, filesystem functions, DDL,
     # explicit COMMIT/ROLLBACK, PRAGMA, or metadata writes can escape the transaction.
+    # SQLite emits an extra table-level READ with no database/column for rowid-only reads.
+    if action == sqlite3.SQLITE_READ and table == "customers" and column == "" and database is None:
+        return sqlite3.SQLITE_OK
     if action == sqlite3.SQLITE_SELECT:
         return sqlite3.SQLITE_OK
     if (

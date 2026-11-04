@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
 from app.models import new_id
-from app.schemas import SandboxRequest, SandboxRun
+from app.schemas import SandboxRequest, SandboxRun, SandboxRunSummary
 from app.services import store
 from app.services.agent_runner import RehearsalAgent, get_agents, run_agents
 from app.services.diff_engine import compare_changes
 from app.services.risk_analyzer import analyze_risk
+from app.services.run_summary import summarize_run
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
@@ -46,8 +47,21 @@ def start_run(
         risk.warnings.append("Agent execution failed; observations are incomplete")
         risk.score = max(risk.score, 80)
         risk.level = "critical"
+    task_snapshot = task.model_copy(
+        deep=True,
+        update={
+            "status": "rehearsed",
+            "agent_run_ids": [agent.id for agent in agents],
+        },
+    )
     run = SandboxRun(
-        id=new_id(), task_id=task.id, status=status, agents=agents, diffs=diffs, risk=risk
+        id=new_id(),
+        task_id=task.id,
+        task=task_snapshot,
+        status=status,
+        agents=agents,
+        diffs=diffs,
+        risk=risk,
     )
     with store.lock:
         store.runs[run.id] = run
@@ -63,3 +77,13 @@ def get_run(run_id: str) -> SandboxRun:
         if run_id not in store.runs:
             raise HTTPException(404, "Run not found")
         return store.runs[run_id].model_copy(deep=True)
+
+
+@router.get(
+    "/runs/{run_id}/summary",
+    response_model=SandboxRunSummary,
+    summary="View a compact rehearsal comparison",
+)
+def get_run_summary(run_id: str) -> SandboxRunSummary:
+    """Return task details, agent counts, agreement groups and blast radius without row images."""
+    return summarize_run(get_run(run_id))

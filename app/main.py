@@ -7,7 +7,12 @@ from app.api import routes_approval, routes_diffs, routes_risk, routes_sandbox, 
 app = FastAPI(
     title="Stunt Double",
     version="0.1.0",
-    description="Synthetic database rehearsals; production writes disabled.",
+    description=(
+        "Local synthetic-data demo. Create a task with POST /tasks, copy its id to "
+        "POST /sandbox/run, then use the returned run id with GET /sandbox/runs/{run_id} "
+        "or GET /sandbox/runs/{run_id}/summary. Two mock agents delete inactive customers; "
+        "a third deliberately deletes more rows in its own sandbox. Production writes are disabled."
+    ),
 )
 for module in (routes_tasks, routes_sandbox, routes_diffs, routes_risk, routes_approval):
     app.include_router(module.router)
