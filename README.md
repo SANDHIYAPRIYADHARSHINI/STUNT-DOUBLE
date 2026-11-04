@@ -86,19 +86,20 @@ The source has three fake customers with `id`, `name`, `email`, `phone`, `status
 Files carry a SQLite application ID ownership marker. Existing unmarked files are refused, including old scaffold sandbox files; choose new empty paths for those files. Symlink and hard-link aliases between demo files or to the reserved production path are rejected. The marker prevents accidental adoption, not malicious file replacement.
 
 Rehearsals and resets share a process lock. Use a single API worker and stop the API before running the reset CLI; concurrent processes or external SQLite writers are unsupported. The three-file reset is sequential, not one atomic transaction. Sandbox files persist for inspection; API review metadata remains in memory.
-## Try the API
+## Try the core demo through FastAPI /docs
 
-Use `/docs` to make these calls in sequence:
+Start `python -m uvicorn app.main:app --reload` and open http://127.0.0.1:8000/docs. No manual database initialization or API keys are required: the first rehearsal creates missing demo files.
 
-1. `POST /tasks` with `{"description":"Delete inactive customers"}`; copy `id`.
-2. `POST /sandbox/run` with `{"task_id":"<id>"}`; copy the rehearsal `id`.
-3. Inspect `GET /sandbox/runs/<id>`, `GET /diffs/<id>`, and `GET /risk/<id>`.
-4. `POST /approval` with `{"run_id":"<id>","decision":"approve","reviewer":"local-reviewer"}`.
-5. `POST /approval/apply` with `{"run_id":"<id>"}` returns `disabled_no_production_writes`. Before approval it returns 403.
-6. `POST /approval/rollback` returns `nothing_applied`.
+1. Expand `POST /tasks`, click **Try it out**, and submit `{"description":"Delete inactive customers"}`. Copy the response `id` (the task ID).
+2. Expand `POST /sandbox/run` and submit `{"task_id":"<task ID>"}`. This runs all three agents synchronously. Copy the response `id` (the rehearsal ID).
+3. Call `GET /sandbox/runs/{run_id}` with the rehearsal ID. It returns a task snapshot, three full `RunResult` records, classified row-level `diffs`, affected counts, blast radius and the existing risk report.
+4. Call `GET /sandbox/runs/{run_id}/summary` for the compact frontend response: task details, agent status/SQL/counts, agreement groups, disagreement counts, blast radius and a short message.
 
-`GET /tasks/<id>` returns status and linked agent IDs. The rehearsal response contains all three agent records and the run ID used by review endpoints. Unknown IDs return 404.
+Expected demo: agents 1 and 2 affect one inactive customer each; agent 3 affects all three customers. The summary groups agents 1 and 2 together and agent 3 separately. The row diff reports one unanimous deletion and two scope conflicts, with a blast-radius estimate of 3. Both full and summary responses explicitly return `production_writes_enabled: false`.
 
+`GET /tasks/{task_id}` returns cumulative task status and linked agent execution IDs. Each rehearsal embeds a snapshot with only that rehearsal's three execution IDs, so repeating a task does not change older responses. `GET /diffs/{run_id}` and `GET /risk/{run_id}` remain available. Unknown task/run IDs return 404. Unsupported tasks are skipped, and failed/skipped observations are summarized as incomplete rather than agreement.
+
+The existing approval and rollback stubs belong to Team Member B. They are not part of this core demo and production writes remain disabled.
 ## Agent results and configuration
 
 `POST /sandbox/run` runs the rehearsal synchronously and returns all three normalized `RunResult` objects in `agents`. `GET /sandbox/runs/{run_id}` returns the same stored results, diffs and risk report.

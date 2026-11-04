@@ -13,7 +13,9 @@ def new_id() -> str:
 
 
 class TaskRequest(BaseModel):
-    description: str = Field(min_length=1, max_length=10000, pattern=r"\S")
+    description: str = Field(
+        min_length=1, max_length=10000, pattern=r"\S", examples=["Delete inactive customers"]
+    )
 
 
 class Task(BaseModel):
