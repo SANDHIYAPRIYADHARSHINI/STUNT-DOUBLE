@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DATABASE_URL: sqlite:////app/data/demo.db
+      SANDBOX_DATABASE_URL_1: sqlite:////app/data/sandbox1/sandbox.db
+      SANDBOX_DATABASE_URL_2: sqlite:////app/data/sandbox2/sandbox.db
+      SANDBOX_DATABASE_URL_3: sqlite:////app/data/sandbox3/sandbox.db
+      REQUIRE_HUMAN_APPROVAL: "true"
+    volumes:
+      - sandbox1:/app/data/sandbox1
+      - sandbox2:/app/data/sandbox2
+      - sandbox3:/app/data/sandbox3
+volumes:
+  sandbox1:
+  sandbox2:
+  sandbox3:
